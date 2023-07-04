@@ -1,7 +1,7 @@
 import java.util.ArrayList;
 
-import algorithms.RegularSearch.RegularSearch;
-import algorithms.YYC.YYC;
+import algorithms.RegularSearch.*;
+import algorithms.YYC.*;
 import py4j.GatewayServer;
 
 public class App {
@@ -12,8 +12,10 @@ public class App {
         String result = "";
         String output = "{";
         result = YYC.FindTT(myMB);
+        // result = ParallelYYC.FindTT(myMB);
         output += "'YYC':" + result + ",";
         result = RegularSearch.FindTT(myMB);
+        // result = ParallelRegularSearch.FindTT(myMB, true);
         output += "'RegularSearch':" + result;
         output += '}';
         return output;
