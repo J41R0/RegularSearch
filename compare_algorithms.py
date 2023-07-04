@@ -1,5 +1,4 @@
 import os
-import csv
 import json
 from collections import OrderedDict, defaultdict
 
@@ -41,7 +40,9 @@ def compare_datasets():
         temp_data = {}
         res_set.clear()
         print("=========>", curr_ds)
-        current_bm = load_arff_dataset(dataset_dir, ds_name)
+        test_ds = LearningMatrix.from_file(dataset_dir + ds_name)
+        current_bm = test_ds.get_basic_matrix()
+        print("MB calculated!")
         ones = 0
         for row in current_bm:
             for val in row:
@@ -62,6 +63,9 @@ def compare_datasets():
                     'Time': result[alg_name]['ms_time']
                 }
             res_set.add(result[alg_name]['numTT'])
+            print(alg_name, result[alg_name]['numTT'])
+        if len(res_set) > 1:
+            raise Exception('Different number of testors!' )
 
         print(result_data[curr_ds])
 
