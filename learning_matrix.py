@@ -1,4 +1,7 @@
+import ast
+import csv
 import arff
+
 from difference_functions import FeatureCompareFunction
 
 
@@ -17,6 +20,27 @@ class LearningMatrix:
         # similarity functions
         self.feature_cmp_func = FeatureCompareFunction()
 
+    @staticmethod
+    def __infer_data_type(input_data):
+        try:
+            value = ast.literal_eval(input_data)
+            if isinstance(value, bool):
+                return 'bool'
+            elif isinstance(value, int):
+                return 'int'
+            elif isinstance(value, float):
+                return 'float'
+            elif isinstance(value, str):
+                return 'string'
+            elif isinstance(value, (list, tuple)):
+                return 'list'
+            # elif isinstance(value, dict):
+            #     return 'dictionary'
+            else:
+                return 'unknown'
+        except ValueError:
+            return 'unknown'
+
     def from_arff(self, path):
         arff_data = arff.load(open(path, 'r'))
         class_att = arff_data['attributes'][-1]
@@ -29,6 +53,95 @@ class LearningMatrix:
 
         for obj in arff_data['data']:
             self.add_obj(obj, class_atts=len(self.class_features_list))
+
+    def from_csv(self, path):
+        with open(path, newline='') as csvfile:
+            try:
+                dialect = csv.Sniffer().sniff(csvfile.read(1024))
+                csvfile.seek(0)
+                reader = csv.reader(csvfile, dialect)
+            except Exception:
+                contents = csvfile.read()
+                delimiters = [',', '\t', ';', ' ', ':']
+                max_count = 0
+                curr_delimiter = ""
+                for char in delimiters:
+                    count = contents.count(char)
+                    if max_count < count:
+                        curr_delimiter = char
+                        max_count = count
+                print("Warning: Issues loading the dataset", curr_delimiter, max_count)
+                csvfile.seek(0)
+                reader = csv.reader(csvfile, delimiter=curr_delimiter)
+            # guess delimiter
+            feature_list = []
+            for row in reader:
+                for element in row:
+                    feature_list.append(element)
+                break
+            class_att = feature_list[-1]
+            # FIXME: infer data type domain
+            for element in feature_list:
+                if element != class_att:
+                    self.add_feature(element, "str")
+                else:
+                    self.add_feature(element, "str", is_class=True)
+            for obj in reader:
+                self.add_obj(obj, class_atts=len(self.class_features_list))
+            # print(len(self.obj_list), len(self.feature_dict))
+
+    def from_dat(self, path):
+        import numpy as np
+        data = np.loadtxt(path, delimiter=',', comments='@')
+        # print(len(data[0])-1)
+        for val in range(len(data[0]) - 1):
+            self.add_feature(val, "real")
+        self.add_feature(len(data[0]) - 1, "real", is_class=True)
+        for obj in data:
+            self.add_obj(obj, class_atts=len(self.class_features_list))
+        # print(len(self.obj_list), len(self.feature_dict))
+        # raise Exception("WIP")
+
+    def from_UCI(self, path):
+        with open(path, newline='') as file:
+            contents = file.read()
+            delimiters = [',', '\t', ';', ' ', ':']
+            max_count = 0
+            curr_delimiter = ""
+            for char in delimiters:
+                count = contents.count(char)
+                if max_count < count:
+                    curr_delimiter = char
+                    max_count = count
+            print("Delimiter detected", "'" + curr_delimiter + "'", max_count)
+            file.seek(0)
+            obj_list = []
+            for line in file.readlines():
+                data_list = line.split(curr_delimiter)
+                if len(data_list) > 1:
+                    obj_list.append(data_list)
+            for val in range(len(obj_list[0]) - 1):
+                self.add_feature(val, "str")
+            self.add_feature(len(obj_list[0]) - 1, "str", is_class=True)
+            for obj in obj_list:
+                self.add_obj(obj, class_atts=len(self.class_features_list))
+        # print(len(self.obj_list), len(self.feature_dict))
+        # raise Exception("WIP")
+
+    @staticmethod
+    def from_file(path):
+        current_ds = LearningMatrix()
+        if '.arff' in path:
+            current_ds.from_arff(path)
+        elif '.csv' in path:
+            current_ds.from_csv(path)
+        elif '.data' in path or '.train' in path:
+            current_ds.from_UCI(path)
+        elif '.dat' in path:
+            current_ds.from_dat(path)
+        else:
+            raise Exception("Unsupported file format")
+        return current_ds
 
     def add_feature(self, name, domain, is_class=False, default=None, cmp_fun='eq'):
         """
@@ -96,7 +209,8 @@ class LearningMatrix:
             result.append(curr_val)
             self.ones_count += curr_val
         if check_value == 0:
-            raise Exception("Inconsistent dataset")
+            return
+            # raise Exception("Inconsistent dataset")
         return result
 
     def get_basic_matrix(self):
@@ -109,22 +223,24 @@ class LearningMatrix:
             for obj_b_pos in range(obj_a_pos + 1, len(self.obj_list)):
                 if self.obj_list[obj_a_pos][self.__OBJ_CLASS] != self.obj_list[obj_b_pos][self.__OBJ_CLASS]:
                     add_to_mb = True
-                    dif_vector = (self.__get_obj_diff_vec(self.obj_list[obj_a_pos][self.__OBJ_FEATURE],
-                                                          self.obj_list[obj_b_pos][self.__OBJ_FEATURE]))
-                    rm_rows = []
-                    for mb_row_pos in range(0, len(MB)):
-                        status = self.__get_cmp_status(dif_vector, MB[mb_row_pos])
-                        if status == "SUB":
-                            rm_rows.append(mb_row_pos)
-                        if status == "SUP":
-                            add_to_mb = False
-                            break
+                    vec = self.__get_obj_diff_vec(self.obj_list[obj_a_pos][self.__OBJ_FEATURE],
+                                                  self.obj_list[obj_b_pos][self.__OBJ_FEATURE])
+                    if vec and len(vec) > 0:
+                        dif_vector = (vec)
+                        rm_rows = []
+                        for mb_row_pos in range(0, len(MB)):
+                            status = self.__get_cmp_status(dif_vector, MB[mb_row_pos])
+                            if status == "SUB":
+                                rm_rows.append(mb_row_pos)
+                            if status == "SUP":
+                                add_to_mb = False
+                                break
 
-                    for mb_row_pos in range(len(rm_rows) - 1, -1, -1):
-                        del MB[rm_rows[mb_row_pos]]
+                        for mb_row_pos in range(len(rm_rows) - 1, -1, -1):
+                            del MB[rm_rows[mb_row_pos]]
 
-                    if len(MB) == 0 or add_to_mb:
-                        MB.append(dif_vector)
+                        if len(MB) == 0 or add_to_mb:
+                            MB.append(dif_vector)
 
         return MB
 
